@@ -2,12 +2,12 @@ class Note {
   final String id;
   final String title;
   final String content;
-  final bool hasImage;
+  final List<String> imagePaths;
 
   const Note({
     required this.id,
     required this.title,
     required this.content,
-    this.hasImage = false,
+    this.imagePaths = const [],
   });
 }

@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -10,69 +9,83 @@ class FileHelper {
   FileHelper._internal();
   factory FileHelper() => _instance;
 
-  // Mendapatkan direktori notes dan memastikan keberadaannya
+  // =============================
+  // DIRECTORY
+  // =============================
   Future<Directory> _getNotesDirectory() async {
     final docsDir = await getApplicationDocumentsDirectory();
     final notesDir = Directory(join(docsDir.path, 'notes'));
+
     if (!await notesDir.exists()) {
       await notesDir.create(recursive: true);
     }
+
     return notesDir;
   }
 
-  // Menghasilkan ID unik berbasis stempel waktu
+  // =============================
+  // GENERATE ID
+  // =============================
   String generateNoteId() {
     return 'note_${DateTime.now().millisecondsSinceEpoch}';
   }
 
-  // Menyimpan catatan untuk fungsi tambah maupun ubah
+  // =============================
+  // SAVE TEXT
+  // =============================
   Future<void> saveNote(String noteId, String title, String content) async {
     final notesDir = await _getNotesDirectory();
     final noteDir = Directory(join(notesDir.path, noteId));
+
     if (!await noteDir.exists()) {
       await noteDir.create(recursive: true);
     }
+
     final file = File(join(noteDir.path, 'content.txt'));
-    // Menyimpan judul pada baris pertama dan isi pada baris berikutnya
     await file.writeAsString('$title\n$content');
   }
 
-  // Membaca satu catatan berdasarkan identitas uniknya
+  // =============================
+  // READ NOTE
+  // =============================
   Future<Note?> readNote(String noteId) async {
     final notesDir = await _getNotesDirectory();
-    final file = File(join(notesDir.path, noteId, 'content.txt'));
+    final noteDir = Directory(join(notesDir.path, noteId));
+
+    final file = File(join(noteDir.path, 'content.txt'));
     if (!await file.exists()) return null;
 
     final rawContent = await file.readAsString();
     final lines = rawContent.split('\n');
-    final title = lines.first;
-    final content = lines.length > 1
-        ? lines.sublist(1).join('\n')
-        : '';
 
-    final imageFile = File(join(notesDir.path, noteId, 'image.jpg'));
-    final hasImage = await imageFile.exists();
+    final title = lines.first;
+    final content =
+        lines.length > 1 ? lines.sublist(1).join('\n') : '';
+
+    final imageFiles = await getNoteImages(noteId);
 
     return Note(
       id: noteId,
       title: title,
       content: content,
-      hasImage: hasImage,
+      imagePaths: imageFiles.map((e) => e.path).toList(),
     );
   }
 
-  // Memindai seluruh catatan yang tersimpan di penyimpanan
+  // =============================
+  // GET ALL NOTES
+  // =============================
   Future<List<Note>> getAllNotes() async {
     final notesDir = await _getNotesDirectory();
     final List<String> noteIds = [];
 
     await for (final entity in notesDir.list()) {
       if (entity is Directory) {
-        noteIds.add(entity.path.split(Platform.pathSeparator).last);
+        noteIds.add(basename(entity.path));
       }
     }
 
-    // Mengurutkan ID dari yang terbaru
+    // terbaru di atas
     noteIds.sort((a, b) => b.compareTo(a));
 
     final List<Note> notes = [];
@@ -80,43 +93,78 @@ class FileHelper {
       final note = await readNote(id);
       if (note != null) notes.add(note);
     }
+
     return notes;
   }
 
-  // Melakukan kompresi dan menyimpan gambar ke folder catatan
-  Future<void> saveNoteImage(String noteId, String sourcePath) async {
+  // =============================
+  // SAVE MULTIPLE IMAGES
+  // =============================
+  Future<void> saveNoteImages(String noteId, List<String> paths) async {
     final notesDir = await _getNotesDirectory();
     final noteDir = Directory(join(notesDir.path, noteId));
+
     if (!await noteDir.exists()) {
       await noteDir.create(recursive: true);
     }
 
-    final originalBytes = await File(sourcePath).readAsBytes();
+    // 🔴 HAPUS GAMBAR LAMA (PENTING)
+    final existingFiles = noteDir.listSync();
+    for (var file in existingFiles) {
+      if (file is File && basename(file.path).startsWith('image_')) {
+        await file.delete();
+      }
+    }
 
-    final compressedBytes = await FlutterImageCompress.compressWithList(
-      originalBytes,
-      quality: 70,
-      minWidth: 1080,
-      minHeight: 1080,
-      format: CompressFormat.jpeg,
-    );
+    // 🔵 SIMPAN GAMBAR BARU
+    for (int i = 0; i < paths.length; i++) {
+      final originalBytes = await File(paths[i]).readAsBytes();
 
-    final imageFile = File(join(noteDir.path, 'image.jpg'));
-    await imageFile.writeAsBytes(compressedBytes);
+      final compressedBytes =
+          await FlutterImageCompress.compressWithList(
+        originalBytes,
+        quality: 70,
+        minWidth: 1080,
+        minHeight: 1080,
+        format: CompressFormat.jpeg,
+      );
+
+      final imageFile = File(join(noteDir.path, 'image_$i.jpg'));
+      await imageFile.writeAsBytes(compressedBytes);
+    }
   }
 
-  // Mengambil referensi berkas gambar catatan
-  Future<File?> getNoteImageFile(String noteId) async {
+  // =============================
+  // LOAD IMAGES
+  // =============================
+  Future<List<File>> getNoteImages(String noteId) async {
     final notesDir = await _getNotesDirectory();
-    final imageFile = File(join(notesDir.path, noteId, 'image.jpg'));
-    if (!await imageFile.exists()) return null;
-    return imageFile;
+    final noteDir = Directory(join(notesDir.path, noteId));
+
+    if (!await noteDir.exists()) return [];
+
+    final files = noteDir.listSync();
+
+    final imageFiles = files
+        .where((f) =>
+            f is File &&
+            basename(f.path).startsWith('image_'))
+        .map((f) => File(f.path))
+        .toList();
+
+    // 🔴 WAJIB: biar urutan benar
+    imageFiles.sort((a, b) => a.path.compareTo(b.path));
+
+    return imageFiles;
   }
 
-  // Menghapus direktori catatan secara permanen
+  // =============================
+  // DELETE NOTE
+  // =============================
   Future<void> deleteNote(String noteId) async {
     final notesDir = await _getNotesDirectory();
     final noteDir = Directory(join(notesDir.path, noteId));
+
     if (await noteDir.exists()) {
       await noteDir.delete(recursive: true);
     }

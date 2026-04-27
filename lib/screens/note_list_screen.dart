@@ -1,4 +1,4 @@
-// lib/screens/note_list_screen.dart
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/note.dart';
 import '../helpers/file_helper.dart';
@@ -22,13 +22,12 @@ class _NoteListScreenState extends State<NoteListScreen> {
     _loadNotes();
   }
 
-  // Mengambil data catatan dari sistem berkas
   Future<void> _loadNotes() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
-    
+
     final notes = await _fileHelper.getAllNotes();
-    
+
     if (!mounted) return;
     setState(() {
       _notes = notes;
@@ -36,14 +35,13 @@ class _NoteListScreenState extends State<NoteListScreen> {
     });
   }
 
-  // Menghapus catatan setelah konfirmasi pengguna
   Future<void> _deleteNote(String noteId) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Hapus Catatan'),
         content: const Text(
-          'Catatan beserta gambar pendampingnya akan dihapus secara permanen.',
+          'Catatan beserta gambar akan dihapus permanen.',
         ),
         actions: [
           TextButton(
@@ -64,7 +62,6 @@ class _NoteListScreenState extends State<NoteListScreen> {
     }
   }
 
-  // Navigasi ke halaman editor dan memperbarui daftar saat kembali
   Future<void> _navigateToEditor({Note? note}) async {
     await Navigator.push(
       context,
@@ -78,9 +75,7 @@ class _NoteListScreenState extends State<NoteListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Catatan'),
-      ),
+      appBar: AppBar(title: const Text('Catatan')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _notes.isEmpty
@@ -95,13 +90,25 @@ class _NoteListScreenState extends State<NoteListScreen> {
                   itemCount: _notes.length,
                   itemBuilder: (context, index) {
                     final note = _notes[index];
+
                     return Card(
                       margin: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 4),
                       child: ListTile(
-                        leading: note.hasImage
-                            ? const Icon(Icons.image, color: Colors.blue)
-                            : const Icon(Icons.article_outlined, color: Colors.grey),
+                        leading: note.imagePaths.isNotEmpty &&
+                                File(note.imagePaths.first).existsSync()
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: Image.file(
+                                  File(note.imagePaths.first),
+                                  width: 50,
+                                  height: 50,
+                                  fit: BoxFit.cover,
+                                ),
+                              )
+                            : const Icon(Icons.article_outlined,
+                                color: Colors.grey),
+
                         title: Text(
                           note.title.isEmpty ? '(Tanpa judul)' : note.title,
                           maxLines: 1,
@@ -109,7 +116,9 @@ class _NoteListScreenState extends State<NoteListScreen> {
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(
-                          note.content.isEmpty ? '(Tidak ada isi)' : note.content,
+                          note.content.isEmpty
+                              ? '(Tidak ada isi)'
+                              : note.content,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
